@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="200" viewBox="0 0 800 200" role="img" aria-label="Tuitio">
+  <rect width="800" height="200" rx="12" fill="#0a0a0a"/>
+  <rect x="24" y="60" width="56" height="80" rx="8" fill="#22c55e"/>
+  <rect x="40" y="96" width="24" height="44" rx="4" fill="#0a0a0a"/>
+  <text x="110" y="118" font-family="Helvetica, Arial, sans-serif" font-size="56" font-weight="600" fill="#ededed">Tuitio</text>
+  <text x="112" y="150" font-family="Helvetica, Arial, sans-serif" font-size="18" fill="#a3a3a3">milestone-gated tuition escrow on Stellar</text>
+</svg>
