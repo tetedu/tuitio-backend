@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: tuitio-backend
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tuitio-db
+          property: connectionString
+      - key: SOROBAN_RPC_URL
+        value: https://soroban-testnet.stellar.org
+      - key: REGISTRY_CONTRACT
+        value: CD2INHSYNIQTVWM222CNSS7MN4MJSOBZOXVEWY3SOAK6MHICCZIEVQWV
+      - key: ESCROW_CONTRACT
+        value: CDV7FA3QJPBR7LORHCZCZG6UCRL7DMXVMZYRDLMW7EXUNBMN7SEXINXW
+      - key: START_LEDGER
+        sync: false
+      - key: POLL_SECONDS
+        value: "10"
+      - key: PORT
+        value: "8080"
+
+databases:
+  - name: tuitio-db
+    plan: free
+    databaseName: tuitio
+    user: tuitio
