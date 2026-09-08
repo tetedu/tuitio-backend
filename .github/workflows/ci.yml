@@ -16,7 +16,8 @@ jobs:
           go-version: "1.25"
           cache: true
       - run: go vet ./...
-      - run: gofmt -l . | tee /dev/stderr | (! read) || (echo "unformatted files" && exit 1)
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - run: go test ./... -v
       - name: Build binary
         run: go build ./...
