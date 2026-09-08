@@ -56,7 +56,7 @@ func TestLiveIngestion(t *testing.T) {
 
 	var startLedger uint32
 	for _, c := range start {
-		startLedger = startLedger*10 + uint32(c - '0')
+		startLedger = startLedger*10 + uint32(c-'0')
 	}
 	ix := New(rpc.New(rpcURL), st, []string{registry, escrow}, 2*time.Second, startLedger)
 	go ix.Run(ctx)
