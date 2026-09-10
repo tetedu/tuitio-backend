@@ -16,10 +16,10 @@ import (
 
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 
-	"github.com/adelekevictor12/tuitio-backend/internal/api"
-	"github.com/adelekevictor12/tuitio-backend/internal/indexer"
-	"github.com/adelekevictor12/tuitio-backend/internal/rpc"
-	"github.com/adelekevictor12/tuitio-backend/internal/store"
+	"github.com/tetedu/tuitio-backend/internal/api"
+	"github.com/tetedu/tuitio-backend/internal/indexer"
+	"github.com/tetedu/tuitio-backend/internal/rpc"
+	"github.com/tetedu/tuitio-backend/internal/store"
 )
 
 const (

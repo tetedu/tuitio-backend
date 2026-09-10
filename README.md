@@ -4,7 +4,7 @@
 
 # Tuitio · Backend
 
-[![CI](https://github.com/adelekevictor12/tuitio-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/adelekevictor12/tuitio-backend/actions/workflows/ci.yml)
+[![CI](https://github.com/tetedu/tuitio-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/tetedu/tuitio-backend/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/go-1.25-00add8)](go.mod)
 

@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/adelekevictor12/tuitio-backend/internal/store"
+	"github.com/tetedu/tuitio-backend/internal/store"
 	"github.com/jackc/pgx/v5"
 )
 

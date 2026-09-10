@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/adelekevictor12/tuitio-backend/internal/api"
-	"github.com/adelekevictor12/tuitio-backend/internal/rpc"
-	"github.com/adelekevictor12/tuitio-backend/internal/store"
+	"github.com/tetedu/tuitio-backend/internal/api"
+	"github.com/tetedu/tuitio-backend/internal/rpc"
+	"github.com/tetedu/tuitio-backend/internal/store"
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 )
 

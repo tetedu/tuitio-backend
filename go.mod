@@ -1,4 +1,4 @@
-module github.com/adelekevictor12/tuitio-backend
+module github.com/tetedu/tuitio-backend
 
 go 1.25.0
 
