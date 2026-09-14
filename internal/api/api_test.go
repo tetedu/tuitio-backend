@@ -43,3 +43,39 @@ func TestGrantIDValidation(t *testing.T) {
 		}
 	}
 }
+
+// TestIndexDescribesService checks the root path returns a service descriptor
+// instead of a bare 404, and that unknown paths still 404.
+func TestIndexDescribesService(t *testing.T) {
+	srv := &Server{store: nil}
+	mux := srv.Routes()
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("root status = %d, want 200", rec.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("root body not json: %v", err)
+	}
+	if body["service"] != "tuitio-backend" {
+		t.Errorf("service = %v", body["service"])
+	}
+	if _, ok := body["endpoints"]; !ok {
+		t.Error("no endpoints listed")
+	}
+}
+
+func TestUnknownPathStillNotFound(t *testing.T) {
+	srv := &Server{store: nil}
+	mux := srv.Routes()
+	req := httptest.NewRequest(http.MethodGet, "/nope", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown path status = %d, want 404", rec.Code)
+	}
+}

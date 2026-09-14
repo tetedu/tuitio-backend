@@ -27,6 +27,7 @@ them into a Postgres read model the frontend can query.
 
 | Endpoint | Description |
 |---|---|
+| `GET /` | service descriptor listing every endpoint |
 | `GET /healthz` | liveness + database check |
 | `GET /api/institutions` | all registered institutions |
 | `GET /api/institutions/{address}` | one institution |

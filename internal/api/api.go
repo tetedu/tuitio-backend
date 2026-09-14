@@ -22,6 +22,9 @@ func New(st *store.Store) *Server {
 
 func (s *Server) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
+	// "/{$}" matches the root path exactly, so unknown paths still 404
+	// rather than falling through to this handler.
+	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /api/institutions", s.institutions)
 	mux.HandleFunc("GET /api/institutions/{address}", s.institution)
@@ -31,6 +34,29 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/activity", s.activity)
 	mux.HandleFunc("GET /api/stats", s.stats)
 	return mux
+}
+
+// index describes the service at the root path. This API is headless, so
+// without it the root returns a bare "404 page not found", which reads as a
+// broken deployment to anyone opening the URL directly.
+func (s *Server) index(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"service":     "tuitio-backend",
+		"description": "Indexer and REST API for Tuitio, a milestone-gated tuition escrow on Stellar",
+		"network":     "testnet",
+		"endpoints": []string{
+			"GET /healthz",
+			"GET /api/institutions",
+			"GET /api/institutions/{address}",
+			"GET /api/grants?sponsor=&institution=&status=",
+			"GET /api/grants/{id}",
+			"GET /api/grants/{id}/terms",
+			"GET /api/activity?limit=",
+			"GET /api/stats",
+		},
+		"app":        "https://tuitio-frontend.vercel.app",
+		"repository": "https://github.com/tetedu/tuitio-backend",
+	})
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
