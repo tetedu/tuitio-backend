@@ -4,17 +4,18 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/adelekevictor12/tuitio-backend/internal/api"
-	"github.com/adelekevictor12/tuitio-backend/internal/config"
-	"github.com/adelekevictor12/tuitio-backend/internal/indexer"
-	"github.com/adelekevictor12/tuitio-backend/internal/rpc"
-	"github.com/adelekevictor12/tuitio-backend/internal/store"
+	"github.com/tetedu/tuitio-backend/internal/api"
+	"github.com/tetedu/tuitio-backend/internal/config"
+	"github.com/tetedu/tuitio-backend/internal/indexer"
+	"github.com/tetedu/tuitio-backend/internal/rpc"
+	"github.com/tetedu/tuitio-backend/internal/store"
 )
 
 func main() {
@@ -41,8 +42,8 @@ func main() {
 	go ix.Run(ctx)
 
 	srv := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st).Routes(),
+		Addr:              net.JoinHostPort(cfg.Host, cfg.Port),
+		Handler:           api.New(st).RoutesWithCORS(cfg.AllowedOrigins),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
