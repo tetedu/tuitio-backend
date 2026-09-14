@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/tetedu/tuitio-backend/internal/store"
 	"github.com/jackc/pgx/v5"
+	"github.com/tetedu/tuitio-backend/internal/store"
 )
 
 type Server struct {

@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
+	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	"github.com/tetedu/tuitio-backend/internal/api"
 	"github.com/tetedu/tuitio-backend/internal/rpc"
 	"github.com/tetedu/tuitio-backend/internal/store"
-	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 )
 
 // TestLiveIngestion runs the whole pipeline against Stellar testnet: RPC
