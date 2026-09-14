@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -41,8 +42,8 @@ func main() {
 	go ix.Run(ctx)
 
 	srv := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st).Routes(),
+		Addr:              net.JoinHostPort(cfg.Host, cfg.Port),
+		Handler:           api.New(st).RoutesWithCORS(cfg.AllowedOrigins),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
