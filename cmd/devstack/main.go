@@ -8,18 +8,20 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 
-	"github.com/adelekevictor12/tuitio-backend/internal/api"
-	"github.com/adelekevictor12/tuitio-backend/internal/indexer"
-	"github.com/adelekevictor12/tuitio-backend/internal/rpc"
-	"github.com/adelekevictor12/tuitio-backend/internal/store"
+	"github.com/tetedu/tuitio-backend/internal/api"
+	"github.com/tetedu/tuitio-backend/internal/indexer"
+	"github.com/tetedu/tuitio-backend/internal/rpc"
+	"github.com/tetedu/tuitio-backend/internal/store"
 )
 
 const (
@@ -67,9 +69,11 @@ func main() {
 	ix := indexer.New(rpc.New(rpcURL), st, []string{registry, escrow}, 10*time.Second, startLedger)
 	go ix.Run(ctx)
 
+	origins := strings.Split(getenv("ALLOWED_ORIGINS", ""), ",")
+	host := getenv("HOST", "0.0.0.0")
 	srv := &http.Server{
-		Addr:              ":" + apiPort,
-		Handler:           api.New(st).Routes(),
+		Addr:              net.JoinHostPort(host, apiPort),
+		Handler:           api.New(st).RoutesWithCORS(origins),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/adelekevictor12/tuitio-backend/internal/rpc"
-	"github.com/adelekevictor12/tuitio-backend/internal/store"
+	"github.com/tetedu/tuitio-backend/internal/rpc"
+	"github.com/tetedu/tuitio-backend/internal/store"
 )
 
 // Indexer polls the Soroban RPC for contract events and folds them into the
