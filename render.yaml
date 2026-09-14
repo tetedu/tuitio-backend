@@ -17,6 +17,8 @@ services:
         value: CDV7FA3QJPBR7LORHCZCZG6UCRL7DMXVMZYRDLMW7EXUNBMN7SEXINXW
       - key: START_LEDGER
         sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
       - key: POLL_SECONDS
         value: "10"
       - key: PORT
