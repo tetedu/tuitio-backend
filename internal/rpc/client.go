@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -58,6 +60,40 @@ func (e *rpcError) Error() string {
 	return fmt.Sprintf("rpc error %d: %s", e.Code, e.Message)
 }
 
+// RangeError reports that the requested startLedger fell outside the window
+// of history the RPC still retains. The indexer recovers by skipping its
+// cursor forward to Oldest, which loses the events in between.
+type RangeError struct {
+	Oldest uint32
+	Newest uint32
+	msg    string
+}
+
+func (e *RangeError) Error() string { return e.msg }
+
+// rangeRe matches the retention window the RPC reports, e.g.
+// "startLedger must be within the ledger range: 4674323 - 4795282".
+var rangeRe = regexp.MustCompile(`ledger range:\s*(\d+)\s*-\s*(\d+)`)
+
+// asRangeError converts an RPC error into a RangeError when it reports a
+// retention window, so callers can recover instead of retrying forever.
+func asRangeError(e *rpcError) error {
+	m := rangeRe.FindStringSubmatch(e.Message)
+	if m == nil {
+		return e
+	}
+	oldest, err1 := strconv.ParseUint(m[1], 10, 32)
+	newest, err2 := strconv.ParseUint(m[2], 10, 32)
+	if err1 != nil || err2 != nil {
+		return e
+	}
+	return &RangeError{
+		Oldest: uint32(oldest),
+		Newest: uint32(newest),
+		msg:    e.Error(),
+	}
+}
+
 // Event is one contract event as returned by getEvents.
 type Event struct {
 	ID             string   `json:"id"`
@@ -105,7 +141,7 @@ func (c *Client) call(ctx context.Context, method string, params rpcParams, out 
 		return fmt.Errorf("decode %s response: %w", method, err)
 	}
 	if parsed.Error != nil {
-		return parsed.Error
+		return asRangeError(parsed.Error)
 	}
 	if err := json.Unmarshal(parsed.Result, out); err != nil {
 		return fmt.Errorf("unmarshal %s result: %w", method, err)

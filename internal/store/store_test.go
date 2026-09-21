@@ -166,3 +166,62 @@ func TestGrantFilters(t *testing.T) {
 		t.Fatal("missing grant should error")
 	}
 }
+
+func TestIndexerStatusReportsProgressAndGaps(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	if err := st.RecordProgress(ctx, 4700000, 4700120); err != nil {
+		t.Fatalf("record progress: %v", err)
+	}
+	status, err := st.IndexerStatus(ctx)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if status.CursorLedger != 4700000 || status.ChainTip != 4700120 {
+		t.Errorf("cursor/tip = %d/%d", status.CursorLedger, status.ChainTip)
+	}
+	if status.LagLedgers != 120 {
+		t.Errorf("lag = %d, want 120", status.LagLedgers)
+	}
+	if status.UpdatedAt == nil || status.StaleSeconds == nil {
+		t.Error("freshness not recorded")
+	}
+	if status.LastGapAt != nil {
+		t.Error("gap reported when none happened")
+	}
+
+	if err := st.RecordGap(ctx, 4000000, 4674323); err != nil {
+		t.Fatalf("record gap: %v", err)
+	}
+	status, err = st.IndexerStatus(ctx)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if status.LastGapFrom == nil || *status.LastGapFrom != 4000000 {
+		t.Errorf("gap from = %v", status.LastGapFrom)
+	}
+	if status.LastGapTo == nil || *status.LastGapTo != 4674323 {
+		t.Errorf("gap to = %v", status.LastGapTo)
+	}
+	if status.LastGapAt == nil {
+		t.Error("gap timestamp missing")
+	}
+}
+
+// The chain tip must never move backwards, so a stale reading cannot make a
+// healthy indexer look like it is lagging.
+func TestChainTipNeverRegresses(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	if err := st.RecordProgress(ctx, 100, 4700120); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordProgress(ctx, 200, 4600000); err != nil {
+		t.Fatal(err)
+	}
+	status, _ := st.IndexerStatus(ctx)
+	if status.ChainTip != 4700120 {
+		t.Errorf("chain tip regressed to %d", status.ChainTip)
+	}
+}

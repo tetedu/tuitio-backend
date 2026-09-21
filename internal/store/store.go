@@ -49,6 +49,13 @@ CREATE TABLE IF NOT EXISTS indexer_state (
     cursor_ledger BIGINT NOT NULL DEFAULT 0
 );
 
+-- Added after the initial release; ALTER keeps existing deployments working.
+ALTER TABLE indexer_state ADD COLUMN IF NOT EXISTS chain_tip BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE indexer_state ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+ALTER TABLE indexer_state ADD COLUMN IF NOT EXISTS last_gap_from BIGINT;
+ALTER TABLE indexer_state ADD COLUMN IF NOT EXISTS last_gap_to BIGINT;
+ALTER TABLE indexer_state ADD COLUMN IF NOT EXISTS last_gap_at TIMESTAMPTZ;
+
 CREATE TABLE IF NOT EXISTS institutions (
     address       TEXT PRIMARY KEY,
     payout        TEXT NOT NULL,
@@ -101,6 +108,60 @@ func (s *Store) Cursor(ctx context.Context) (int64, error) {
 	var cursor int64
 	err := s.pool.QueryRow(ctx, `SELECT cursor_ledger FROM indexer_state WHERE id = 1`).Scan(&cursor)
 	return cursor, err
+}
+
+// RecordProgress notes how far the indexer has read and when, so staleness is
+// observable rather than silent.
+func (s *Store) RecordProgress(ctx context.Context, cursor, chainTip int64) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE indexer_state
+		SET cursor_ledger = $1,
+		    chain_tip = GREATEST(chain_tip, $2),
+		    updated_at = now()
+		WHERE id = 1`, cursor, chainTip)
+	return err
+}
+
+// RecordGap notes that history was skipped because it aged out of the RPC's
+// retention window. The read model is incomplete across this range.
+func (s *Store) RecordGap(ctx context.Context, from, to int64) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE indexer_state
+		SET last_gap_from = $1, last_gap_to = $2, last_gap_at = now()
+		WHERE id = 1`, from, to)
+	return err
+}
+
+// IndexerStatus is the health of the indexing pipeline.
+type IndexerStatus struct {
+	CursorLedger int64      `json:"cursor_ledger"`
+	ChainTip     int64      `json:"chain_tip"`
+	LagLedgers   int64      `json:"lag_ledgers"`
+	UpdatedAt    *time.Time `json:"updated_at"`
+	StaleSeconds *int64     `json:"stale_seconds"`
+	LastGapFrom  *int64     `json:"last_gap_from"`
+	LastGapTo    *int64     `json:"last_gap_to"`
+	LastGapAt    *time.Time `json:"last_gap_at"`
+}
+
+// IndexerStatus reports indexing progress and any skipped history.
+func (s *Store) IndexerStatus(ctx context.Context) (IndexerStatus, error) {
+	var st IndexerStatus
+	err := s.pool.QueryRow(ctx, `
+		SELECT cursor_ledger, chain_tip, updated_at, last_gap_from, last_gap_to, last_gap_at
+		FROM indexer_state WHERE id = 1`,
+	).Scan(&st.CursorLedger, &st.ChainTip, &st.UpdatedAt, &st.LastGapFrom, &st.LastGapTo, &st.LastGapAt)
+	if err != nil {
+		return st, err
+	}
+	if st.ChainTip > st.CursorLedger {
+		st.LagLedgers = st.ChainTip - st.CursorLedger
+	}
+	if st.UpdatedAt != nil {
+		secs := int64(time.Since(*st.UpdatedAt).Seconds())
+		st.StaleSeconds = &secs
+	}
+	return st, nil
 }
 
 func (s *Store) SetCursor(ctx context.Context, cursor int64) error {
