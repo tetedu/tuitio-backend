@@ -2,6 +2,7 @@ package indexer
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 
@@ -69,11 +70,8 @@ func (ix *Indexer) initCursor(ctx context.Context) {
 	log.Printf("indexer: no history requested, starting at chain tip %d", latest)
 }
 
-// The RPC limits how far back getEvents can read. Older ranges return an
-// error, which we treat as unrecoverable for that window and skip forward.
-const maxSpan = 10_000
-
 func (ix *Indexer) pollOnce(ctx context.Context) {
+	jumped := false
 	for {
 		cursor, err := ix.store.Cursor(ctx)
 		if err != nil {
@@ -83,14 +81,28 @@ func (ix *Indexer) pollOnce(ctx context.Context) {
 
 		events, latest, err := ix.rpc.Events(ctx, uint32(cursor+1), ix.contracts)
 		if err != nil {
-			// If we are beyond the retention window the RPC rejects the
-			// range. Jump to the oldest readable ledger and continue.
-			oldest, ok := ledgerFromRpcError(err, latest)
-			if ok {
-				log.Printf("indexer: range rejected, jumping to ledger %d", oldest)
-				if err := ix.store.SetCursor(ctx, int64(oldest-1)); err != nil {
+			var re *rpc.RangeError
+			// The cursor has fallen outside the window of history the RPC
+			// retains — typically after the service was stopped for a while.
+			// Skip forward to the oldest readable ledger; without this the
+			// same doomed range is retried forever and the read model
+			// silently freezes.
+			if errors.As(err, &re) && !jumped {
+				log.Printf(
+					"indexer: cursor %d is outside the RPC retention window %d-%d; "+
+						"skipping to %d. Events in that gap are lost and the read "+
+						"model may be incomplete until a reconciliation pass runs.",
+					cursor, re.Oldest, re.Newest, re.Oldest)
+				if err := ix.store.SetCursor(ctx, int64(re.Oldest)-1); err != nil {
 					log.Printf("indexer: set cursor: %v", err)
+					return
 				}
+				if err := ix.store.RecordGap(ctx, cursor, int64(re.Oldest)); err != nil {
+					log.Printf("indexer: record gap: %v", err)
+				}
+				// Only one jump per poll, so a persistently bad range cannot
+				// spin this loop.
+				jumped = true
 				continue
 			}
 			log.Printf("indexer: get events: %v", err)
@@ -98,10 +110,12 @@ func (ix *Indexer) pollOnce(ctx context.Context) {
 		}
 
 		if len(events) == 0 {
+			next := cursor
 			if latest > uint32(cursor) {
-				if err := ix.store.SetCursor(ctx, int64(latest)); err != nil {
-					log.Printf("indexer: set cursor: %v", err)
-				}
+				next = int64(latest)
+			}
+			if err := ix.store.RecordProgress(ctx, next, int64(latest)); err != nil {
+				log.Printf("indexer: record progress: %v", err)
 			}
 			return
 		}
@@ -129,6 +143,9 @@ func (ix *Indexer) pollOnce(ctx context.Context) {
 		if err := ix.store.Apply(ctx, applied, maxLedger); err != nil {
 			log.Printf("indexer: apply: %v", err)
 			return
+		}
+		if err := ix.store.RecordProgress(ctx, maxLedger, int64(latest)); err != nil {
+			log.Printf("indexer: record progress: %v", err)
 		}
 
 		ix.recordActivity(ctx, events)
@@ -266,17 +283,4 @@ func (ix *Indexer) recordActivity(ctx context.Context, events []rpc.Event) {
 			return
 		}
 	}
-}
-
-// ledgerFromRpcError extracts the oldest readable ledger from an RPC range
-// error. The Soroban RPC reports the retention boundary in some errors; when
-// it does not, we fall back to latest minus the maximum span.
-func ledgerFromRpcError(err error, latest uint32) (uint32, bool) {
-	if latest == 0 {
-		return 0, false
-	}
-	if span := latest; span > maxSpan {
-		return latest - maxSpan, true
-	}
-	return 1, true
 }

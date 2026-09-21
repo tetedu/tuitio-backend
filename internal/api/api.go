@@ -33,6 +33,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/grants/{id}/terms", s.terms)
 	mux.HandleFunc("GET /api/activity", s.activity)
 	mux.HandleFunc("GET /api/stats", s.stats)
+	mux.HandleFunc("GET /api/indexer", s.indexer)
 	return mux
 }
 
@@ -53,6 +54,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 			"GET /api/grants/{id}/terms",
 			"GET /api/activity?limit=",
 			"GET /api/stats",
+			"GET /api/indexer",
 		},
 		"app":        "https://tuitio-frontend.vercel.app",
 		"repository": "https://github.com/tetedu/tuitio-backend",
@@ -154,6 +156,18 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 	st, err := s.store.Stats(r.Context())
 	if err != nil {
 		writeInternal(w, "stats", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
+}
+
+// indexer reports how far the event indexer has read and whether it ever had
+// to skip history, so a frozen or incomplete read model is visible instead of
+// silently serving stale data.
+func (s *Server) indexer(w http.ResponseWriter, r *http.Request) {
+	st, err := s.store.IndexerStatus(r.Context())
+	if err != nil {
+		writeInternal(w, "indexer status", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
