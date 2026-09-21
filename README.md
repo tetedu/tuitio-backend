@@ -36,6 +36,7 @@ them into a Postgres read model the frontend can query.
 | `GET /api/grants/{id}/terms` | every term, defaulting to `pending` like the contract |
 | `GET /api/activity?limit=` | raw event audit feed |
 | `GET /api/stats` | protocol counters |
+| `GET /api/indexer` | indexing progress, lag, and any skipped history |
 
 ## Quick start
 
