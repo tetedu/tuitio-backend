@@ -8,7 +8,7 @@ escrow as experimental.
 
 ## Reporting a vulnerability
 
-Email **adelekevat@gmail.com** with details and a reproduction if possible.
+Email **temieehade@gmail.com** with details and a reproduction if possible.
 Please do not open public issues for vulnerabilities. You will get an
 acknowledgement within 72 hours and a status update within 7 days.
 
