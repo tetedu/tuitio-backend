@@ -55,6 +55,8 @@ ALTER TABLE indexer_state ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 ALTER TABLE indexer_state ADD COLUMN IF NOT EXISTS last_gap_from BIGINT;
 ALTER TABLE indexer_state ADD COLUMN IF NOT EXISTS last_gap_to BIGINT;
 ALTER TABLE indexer_state ADD COLUMN IF NOT EXISTS last_gap_at TIMESTAMPTZ;
+ALTER TABLE indexer_state ADD COLUMN IF NOT EXISTS last_reconcile_at TIMESTAMPTZ;
+ALTER TABLE indexer_state ADD COLUMN IF NOT EXISTS last_reconcile_repairs INT;
 
 CREATE TABLE IF NOT EXISTS institutions (
     address       TEXT PRIMARY KEY,
@@ -132,6 +134,16 @@ func (s *Store) RecordGap(ctx context.Context, from, to int64) error {
 	return err
 }
 
+// RecordReconcile notes when a reconciliation pass last ran and how many rows
+// it had to repair.
+func (s *Store) RecordReconcile(ctx context.Context, repairs int) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE indexer_state
+		SET last_reconcile_at = now(), last_reconcile_repairs = $1
+		WHERE id = 1`, repairs)
+	return err
+}
+
 // IndexerStatus is the health of the indexing pipeline.
 type IndexerStatus struct {
 	CursorLedger int64      `json:"cursor_ledger"`
@@ -142,15 +154,20 @@ type IndexerStatus struct {
 	LastGapFrom  *int64     `json:"last_gap_from"`
 	LastGapTo    *int64     `json:"last_gap_to"`
 	LastGapAt    *time.Time `json:"last_gap_at"`
+
+	LastReconcileAt      *time.Time `json:"last_reconcile_at"`
+	LastReconcileRepairs *int       `json:"last_reconcile_repairs"`
 }
 
 // IndexerStatus reports indexing progress and any skipped history.
 func (s *Store) IndexerStatus(ctx context.Context) (IndexerStatus, error) {
 	var st IndexerStatus
 	err := s.pool.QueryRow(ctx, `
-		SELECT cursor_ledger, chain_tip, updated_at, last_gap_from, last_gap_to, last_gap_at
+		SELECT cursor_ledger, chain_tip, updated_at, last_gap_from, last_gap_to, last_gap_at,
+		       last_reconcile_at, last_reconcile_repairs
 		FROM indexer_state WHERE id = 1`,
-	).Scan(&st.CursorLedger, &st.ChainTip, &st.UpdatedAt, &st.LastGapFrom, &st.LastGapTo, &st.LastGapAt)
+	).Scan(&st.CursorLedger, &st.ChainTip, &st.UpdatedAt, &st.LastGapFrom, &st.LastGapTo, &st.LastGapAt,
+		&st.LastReconcileAt, &st.LastReconcileRepairs)
 	if err != nil {
 		return st, err
 	}
@@ -298,6 +315,62 @@ type AdvanceTerm struct {
 type SetGrantStatus struct {
 	GrantID int64
 	Status  string
+}
+
+// ----- reconciliation writes -------------------------------------------------
+//
+// Event application is deliberately conservative: inserts do nothing on
+// conflict and counters only move forward, so a replay cannot corrupt state.
+// Reconciliation is the opposite — it trusts the chain and overwrites, which
+// is how a read model with a hole in its history gets repaired.
+
+// ReconcileGrant overwrites a grant row with authoritative contract state.
+func (s *Store) ReconcileGrant(ctx context.Context, g Grant) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO grants (grant_id, sponsor, beneficiary, institution, token,
+		                    term_amount, terms_total, next_term, status, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		ON CONFLICT (grant_id) DO UPDATE SET
+		  sponsor = EXCLUDED.sponsor,
+		  beneficiary = EXCLUDED.beneficiary,
+		  institution = EXCLUDED.institution,
+		  token = EXCLUDED.token,
+		  term_amount = EXCLUDED.term_amount,
+		  terms_total = EXCLUDED.terms_total,
+		  next_term = EXCLUDED.next_term,
+		  status = EXCLUDED.status,
+		  created_at = EXCLUDED.created_at`,
+		g.GrantID, g.Sponsor, g.Beneficiary, g.Institution, g.Token,
+		g.TermAmount, g.TermsTotal, g.NextTerm, g.Status, g.CreatedAt)
+	return err
+}
+
+// ReconcileTerm overwrites a term row with authoritative contract state.
+func (s *Store) ReconcileTerm(ctx context.Context, t Term) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO terms (grant_id, term_index, status, attested_at, release_after)
+		VALUES ($1,$2,$3,$4,$5)
+		ON CONFLICT (grant_id, term_index) DO UPDATE SET
+		  status = EXCLUDED.status,
+		  attested_at = EXCLUDED.attested_at,
+		  release_after = EXCLUDED.release_after`,
+		t.GrantID, t.TermIndex, t.Status, t.AttestedAt, t.ReleaseAfter)
+	return err
+}
+
+// ReconcileInstitution overwrites an institution row with contract state.
+func (s *Store) ReconcileInstitution(ctx context.Context, i Institution) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO institutions (address, payout, name, country, status, registered_at)
+		VALUES ($1,$2,$3,$4,$5,$6)
+		ON CONFLICT (address) DO UPDATE SET
+		  payout = EXCLUDED.payout,
+		  name = EXCLUDED.name,
+		  country = EXCLUDED.country,
+		  status = EXCLUDED.status,
+		  registered_at = EXCLUDED.registered_at`,
+		i.Address, i.Payout, i.Name, i.Country, i.Status, i.RegisteredAt)
+	return err
 }
 
 // RecordActivity writes an event to the audit feed, keyed by a hash of its

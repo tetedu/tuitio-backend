@@ -38,7 +38,7 @@ them into a Postgres read model the frontend can query.
 | `GET /api/grants/{id}/terms` | every term, defaulting to `pending` like the contract |
 | `GET /api/activity?limit=` | raw event audit feed |
 | `GET /api/stats` | protocol counters |
-| `GET /api/indexer` | indexing progress, lag, and any skipped history |
+| `GET /api/indexer` | indexing progress, lag, skipped history, last reconciliation |
 
 ## Quick start
 
@@ -63,6 +63,31 @@ go test ./...
 TUITION_LIVE=1 REGISTRY_CONTRACT=… ESCROW_CONTRACT=… START_LEDGER=… \
   go test ./internal/indexer/ -run TestLiveIngestion   # full pipeline vs testnet
 ```
+
+## Reconciliation
+
+The indexer builds its view from events alone, which is correct only if it sees
+every event. It can miss history: the Soroban RPC retains a limited window, so
+a service that was stopped for long enough has to skip forward and leaves a
+hole.
+
+`cmd/reconcile` closes that hole. It reads authoritative state straight from
+the contracts over RPC simulation — no keys, no fees — compares every grant,
+term and institution against the read model, and overwrites whatever
+disagrees.
+
+```bash
+go run ./cmd/reconcile              # repair drift
+go run ./cmd/reconcile -dry-run     # report drift only
+go run ./cmd/reconcile -json        # machine-readable report
+```
+
+It exits non-zero when drift was found, so a scheduled run can alert. Because
+it depends only on contract state, an empty database is rebuilt completely —
+which is the recovery path when history has aged out of the RPC entirely.
+
+Check `GET /api/indexer` for whether a gap was skipped and when the last
+reconciliation ran.
 
 ## Configuration
 
