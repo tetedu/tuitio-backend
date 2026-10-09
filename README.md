@@ -8,6 +8,8 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/go-1.25-00add8)](go.mod)
 
+**Live demo:** <https://tuitio-frontend.vercel.app> (Stellar testnet, Freighter wallet)
+
 **Go indexer and REST API for the Tuitio protocol.** It watches the deployed
 Soroban contracts on Stellar, decodes every contract event from XDR, and folds
 them into a Postgres read model the frontend can query.
@@ -76,8 +78,8 @@ string.
 
 ## Related repositories
 
-- [`tuitio-contract`](https://github.com/adelekevictor12/tuitio-contract) — the Soroban contracts (Rust)
-- [`tuitio-frontend`](https://github.com/adelekevictor12/tuitio-frontend) — Next.js web app
+- [`tuitio-contract`](https://github.com/tetedu/tuitio-contract) — the Soroban contracts (Rust)
+- [`tuitio-frontend`](https://github.com/tetedu/tuitio-frontend) — Next.js web app
 
 ## Maintainers
 
