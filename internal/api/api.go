@@ -20,20 +20,38 @@ func New(st *store.Store) *Server {
 	return &Server{store: st}
 }
 
+// route is one method+pattern+handler binding. Keeping the full list in one
+// place lets Routes() register them and the OpenAPI drift test enumerate the
+// exact set that must appear in the spec.
+type route struct {
+	method  string
+	pattern string
+	handler http.HandlerFunc
+}
+
+func (s *Server) routes() []route {
+	return []route{
+		{"GET", "/{$}", s.index},
+		{"GET", "/healthz", s.health},
+		{"GET", "/api/institutions", s.institutions},
+		{"GET", "/api/institutions/{address}", s.institution},
+		{"GET", "/api/grants", s.grants},
+		{"GET", "/api/grants/{id}", s.grant},
+		{"GET", "/api/grants/{id}/terms", s.terms},
+		{"GET", "/api/activity", s.activity},
+		{"GET", "/api/stats", s.stats},
+		{"GET", "/api/indexer", s.indexer},
+		{"GET", "/openapi.json", s.openapi},
+	}
+}
+
 func (s *Server) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	// "/{$}" matches the root path exactly, so unknown paths still 404
 	// rather than falling through to this handler.
-	mux.HandleFunc("GET /{$}", s.index)
-	mux.HandleFunc("GET /healthz", s.health)
-	mux.HandleFunc("GET /api/institutions", s.institutions)
-	mux.HandleFunc("GET /api/institutions/{address}", s.institution)
-	mux.HandleFunc("GET /api/grants", s.grants)
-	mux.HandleFunc("GET /api/grants/{id}", s.grant)
-	mux.HandleFunc("GET /api/grants/{id}/terms", s.terms)
-	mux.HandleFunc("GET /api/activity", s.activity)
-	mux.HandleFunc("GET /api/stats", s.stats)
-	mux.HandleFunc("GET /api/indexer", s.indexer)
+	for _, r := range s.routes() {
+		mux.HandleFunc(r.method+" "+r.pattern, r.handler)
+	}
 	return mux
 }
 
@@ -55,6 +73,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 			"GET /api/activity?limit=",
 			"GET /api/stats",
 			"GET /api/indexer",
+			"GET /openapi.json",
 		},
 		"app":        "https://tuitio-frontend.vercel.app",
 		"repository": "https://github.com/tetedu/tuitio-backend",
