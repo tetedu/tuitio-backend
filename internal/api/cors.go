@@ -42,7 +42,12 @@ func (m *corsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.next.ServeHTTP(w, r)
 }
 
-// Routes wraps the mux with CORS handling for the given allowed origins.
+// Routes wraps the mux with request-id assignment, structured request logging,
+// and CORS handling for the given allowed origins. The request-id middleware is
+// outermost so the id is on the context for everything inside it.
 func (s *Server) RoutesWithCORS(origins []string) http.Handler {
-	return newCORSMiddleware(origins, s.Routes())
+	var handler http.Handler = newCORSMiddleware(origins, s.Routes())
+	handler = s.LoggingMiddleware(handler)
+	handler = s.RequestIDMiddleware(handler)
+	return handler
 }

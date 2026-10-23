@@ -3,7 +3,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -14,22 +14,28 @@ import (
 	"github.com/tetedu/tuitio-backend/internal/api"
 	"github.com/tetedu/tuitio-backend/internal/config"
 	"github.com/tetedu/tuitio-backend/internal/indexer"
+	"github.com/tetedu/tuitio-backend/internal/log"
 	"github.com/tetedu/tuitio-backend/internal/rpc"
 	"github.com/tetedu/tuitio-backend/internal/store"
 )
 
 func main() {
+	log.SetDefault(log.New(os.Getenv("LOG_FORMAT")))
+
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("config: %v", err)
+		slog.Default().Error("config load failed", "error", err)
+		os.Exit(1)
 	}
+	log.LogConfig(context.Background(), cfg)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	st, err := store.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("store: %v", err)
+		slog.Default().Error("store connect failed", "error", err)
+		os.Exit(1)
 	}
 	defer st.Close()
 
@@ -48,9 +54,10 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("api: listening on :%s", cfg.Port)
+		slog.Default().Info("api listening", "port", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("listen: %v", err)
+			slog.Default().Error("api listen failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -58,7 +65,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("shutdown: %v", err)
+		slog.Default().Error("api shutdown", "error", err)
 	}
 	os.Exit(0)
 }

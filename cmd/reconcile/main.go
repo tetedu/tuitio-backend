@@ -14,24 +14,28 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
 	"github.com/tetedu/tuitio-backend/internal/chain"
 	"github.com/tetedu/tuitio-backend/internal/config"
+	"github.com/tetedu/tuitio-backend/internal/log"
 	"github.com/tetedu/tuitio-backend/internal/reconcile"
 	"github.com/tetedu/tuitio-backend/internal/store"
 )
 
 func main() {
+	log.SetDefault(log.New(os.Getenv("LOG_FORMAT")))
+
 	dryRun := flag.Bool("dry-run", false, "report drift without writing repairs")
 	asJSON := flag.Bool("json", false, "emit the report as JSON")
 	flag.Parse()
 
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("config: %v", err)
+		slog.Default().Error("config load failed", "error", err)
+		os.Exit(1)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -39,7 +43,8 @@ func main() {
 
 	st, err := store.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("store: %v", err)
+		slog.Default().Error("store connect failed", "error", err)
+		os.Exit(1)
 	}
 	defer st.Close()
 
@@ -61,22 +66,23 @@ func main() {
 
 	report, err := reconcile.Run(ctx, esc, reg, repo)
 	if err != nil {
-		log.Fatalf("reconcile: %v", err)
+		slog.Default().Error("reconcile failed", "error", err)
+		os.Exit(1)
 	}
 
 	if *asJSON {
 		out, _ := json.MarshalIndent(report, "", "  ")
 		os.Stdout.Write(append(out, '\n'))
 	} else {
-		log.Printf("reconcile: %s", report)
+		slog.Default().Info("reconcile complete", "report", report.String())
 		for _, d := range report.Drift {
-			log.Printf("  drift: %s", d)
+			slog.Default().Info("drift", "detail", d)
 		}
 	}
 
 	if !*dryRun {
 		if err := st.RecordReconcile(ctx, report.GrantsRepaired+report.TermsRepaired+report.InstitutionsRepaired); err != nil {
-			log.Printf("record reconcile: %v", err)
+			slog.Default().Error("record reconcile", "error", err)
 		}
 	}
 	if !report.Clean() {

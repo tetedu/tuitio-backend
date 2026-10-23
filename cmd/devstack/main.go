@@ -7,7 +7,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -20,6 +20,7 @@ import (
 
 	"github.com/tetedu/tuitio-backend/internal/api"
 	"github.com/tetedu/tuitio-backend/internal/indexer"
+	"github.com/tetedu/tuitio-backend/internal/log"
 	"github.com/tetedu/tuitio-backend/internal/rpc"
 	"github.com/tetedu/tuitio-backend/internal/store"
 )
@@ -30,13 +31,16 @@ const (
 )
 
 func main() {
+	log.SetDefault(log.New(os.Getenv("LOG_FORMAT")))
+
 	rpcURL := getenv("SOROBAN_RPC_URL", "https://soroban-testnet.stellar.org")
 	registry := getenv("REGISTRY_CONTRACT", "CCTZVSPMIYEA4X2Z6UP5IPIO2HBIZWHLV37OUDBV32YUCP64JNIPBCPO")
 	escrow := getenv("ESCROW_CONTRACT", "CDPGTHO2O7LTURTJF7L7ZZZTZCXPNABAPGVRDMBYIJ737R6O3DOPWJ34")
 	apiPort := getenv("PORT", "8080")
 
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		log.Fatalf("mkdir %s: %v", dataDir, err)
+		slog.Default().Error("mkdir failed", "dir", dataDir, "error", err)
+		os.Exit(1)
 	}
 	pg := embeddedpostgres.NewDatabase(
 		embeddedpostgres.DefaultConfig().
@@ -46,11 +50,12 @@ func main() {
 			Port(defaultPort),
 	)
 	if err := pg.Start(); err != nil {
-		log.Fatalf("start postgres: %v", err)
+		slog.Default().Error("start postgres failed", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := pg.Stop(); err != nil {
-			log.Printf("stop postgres: %v", err)
+			slog.Default().Error("stop postgres", "error", err)
 		}
 	}()
 
@@ -60,7 +65,8 @@ func main() {
 	dbURL := "postgres://tuitio:tuitio@localhost:54329/tuitio?sslmode=disable"
 	st, err := store.Connect(ctx, dbURL)
 	if err != nil {
-		log.Fatalf("store: %v", err)
+		slog.Default().Error("store connect failed", "error", err)
+		os.Exit(1)
 	}
 	defer st.Close()
 
@@ -77,9 +83,10 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
-		log.Printf("devstack: api on :%s, postgres on :%d", apiPort, defaultPort)
+		slog.Default().Info("devstack api up", "port", apiPort, "postgres_port", defaultPort)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("listen: %v", err)
+			slog.Default().Error("listen failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 

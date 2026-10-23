@@ -3,7 +3,8 @@ package indexer
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/tetedu/tuitio-backend/internal/rpc"
@@ -47,27 +48,31 @@ func (ix *Indexer) Run(ctx context.Context) {
 func (ix *Indexer) initCursor(ctx context.Context) {
 	cursor, err := ix.store.Cursor(ctx)
 	if err != nil {
-		log.Fatalf("read cursor: %v", err)
+		slog.Default().ErrorContext(ctx, "indexer read cursor", "error", err)
+		os.Exit(1)
 	}
 	if cursor > 0 {
 		return
 	}
 	if ix.startLedger > 0 {
 		if err := ix.store.SetCursor(ctx, int64(ix.startLedger)); err != nil {
-			log.Fatalf("set cursor: %v", err)
+			slog.Default().ErrorContext(ctx, "indexer set cursor", "ledger", ix.startLedger, "error", err)
+			os.Exit(1)
 		}
-		log.Printf("indexer: starting from configured ledger %d", ix.startLedger)
+		slog.Default().InfoContext(ctx, "indexer starting from configured ledger", "ledger", ix.startLedger)
 		return
 	}
 	latest, err := ix.rpc.LatestLedger(ctx)
 	if err != nil {
-		log.Fatalf("latest ledger: %v", err)
+		slog.Default().ErrorContext(ctx, "indexer latest ledger", "error", err)
+		os.Exit(1)
 	}
 	// Start one ledger back so the first poll has a range to read.
 	if err := ix.store.SetCursor(ctx, int64(latest)-1); err != nil {
-		log.Fatalf("set cursor: %v", err)
+		slog.Default().ErrorContext(ctx, "indexer set cursor", "error", err)
+		os.Exit(1)
 	}
-	log.Printf("indexer: no history requested, starting at chain tip %d", latest)
+	slog.Default().InfoContext(ctx, "indexer no history requested, starting at chain tip", "ledger", latest)
 }
 
 func (ix *Indexer) pollOnce(ctx context.Context) {
@@ -75,7 +80,7 @@ func (ix *Indexer) pollOnce(ctx context.Context) {
 	for {
 		cursor, err := ix.store.Cursor(ctx)
 		if err != nil {
-			log.Printf("indexer: read cursor: %v", err)
+			slog.Default().ErrorContext(ctx, "indexer read cursor", "cursor", cursor, "error", err)
 			return
 		}
 
@@ -88,24 +93,21 @@ func (ix *Indexer) pollOnce(ctx context.Context) {
 			// same doomed range is retried forever and the read model
 			// silently freezes.
 			if errors.As(err, &re) && !jumped {
-				log.Printf(
-					"indexer: cursor %d is outside the RPC retention window %d-%d; "+
-						"skipping to %d. Events in that gap are lost and the read "+
-						"model may be incomplete until a reconciliation pass runs.",
-					cursor, re.Oldest, re.Newest, re.Oldest)
+				slog.Default().WarnContext(ctx, "indexer cursor outside retention window; skipping forward",
+					"cursor", cursor, "oldest", re.Oldest, "newest", re.Newest, "new_cursor", int64(re.Oldest)-1)
 				if err := ix.store.SetCursor(ctx, int64(re.Oldest)-1); err != nil {
-					log.Printf("indexer: set cursor: %v", err)
+					slog.Default().ErrorContext(ctx, "indexer set cursor", "cursor", int64(re.Oldest)-1, "error", err)
 					return
 				}
 				if err := ix.store.RecordGap(ctx, cursor, int64(re.Oldest)); err != nil {
-					log.Printf("indexer: record gap: %v", err)
+					slog.Default().ErrorContext(ctx, "indexer record gap", "error", err)
 				}
 				// Only one jump per poll, so a persistently bad range cannot
 				// spin this loop.
 				jumped = true
 				continue
 			}
-			log.Printf("indexer: get events: %v", err)
+			slog.Default().ErrorContext(ctx, "indexer get events", "cursor", cursor, "error", err)
 			return
 		}
 
@@ -115,8 +117,9 @@ func (ix *Indexer) pollOnce(ctx context.Context) {
 				next = int64(latest)
 			}
 			if err := ix.store.RecordProgress(ctx, next, int64(latest)); err != nil {
-				log.Printf("indexer: record progress: %v", err)
+				slog.Default().ErrorContext(ctx, "indexer record progress", "error", err)
 			}
+			slog.Default().DebugContext(ctx, "indexer no new events", "cursor", cursor, "latest", int64(latest))
 			return
 		}
 
@@ -128,7 +131,7 @@ func (ix *Indexer) pollOnce(ctx context.Context) {
 			}
 			decoded, err := decodeEvent(ev)
 			if err != nil {
-				log.Printf("indexer: skip undecodable event ledger %d: %v", ev.Ledger, err)
+				slog.Default().WarnContext(ctx, "indexer skipping undecodable event", "ledger", ev.Ledger, "error", err)
 				continue
 			}
 			if decoded == nil {
@@ -141,12 +144,15 @@ func (ix *Indexer) pollOnce(ctx context.Context) {
 		}
 
 		if err := ix.store.Apply(ctx, applied, maxLedger); err != nil {
-			log.Printf("indexer: apply: %v", err)
+			slog.Default().ErrorContext(ctx, "indexer apply events", "ledger", maxLedger, "count", len(applied), "error", err)
 			return
 		}
 		if err := ix.store.RecordProgress(ctx, maxLedger, int64(latest)); err != nil {
-			log.Printf("indexer: record progress: %v", err)
+			slog.Default().ErrorContext(ctx, "indexer record progress", "error", err)
 		}
+
+		slog.Default().InfoContext(ctx, "indexer applied events",
+			"ledger", maxLedger, "cursor", cursor, "events", len(events), "applied", len(applied), "latest", int64(latest))
 
 		ix.recordActivity(ctx, events)
 
@@ -279,7 +285,7 @@ func (ix *Indexer) recordActivity(ctx context.Context, events []rpc.Event) {
 		// GrantCreated arrives without a timestamp; use the attested-free
 		// fields as-is. The activity row keeps the raw payload.
 		if err := ix.store.RecordActivity(ctx, int64(ev.Ledger), ev.TxHash, ev.ContractID, name, decoded); err != nil {
-			log.Printf("indexer: record activity: %v", err)
+			slog.Default().ErrorContext(ctx, "indexer record activity", "ledger", ev.Ledger, "error", err)
 			return
 		}
 	}

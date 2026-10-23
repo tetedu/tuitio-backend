@@ -4,7 +4,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -76,7 +76,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 func (s *Server) institutions(w http.ResponseWriter, r *http.Request) {
 	list, err := s.store.Institutions(r.Context())
 	if err != nil {
-		writeInternal(w, "list institutions", err)
+		writeInternal(w, r, "list institutions", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
@@ -89,7 +89,7 @@ func (s *Server) institution(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, "get institution", err)
+		writeInternal(w, r, "get institution", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, one)
@@ -99,7 +99,7 @@ func (s *Server) grants(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	list, err := s.store.Grants(r.Context(), q.Get("sponsor"), q.Get("institution"), q.Get("status"))
 	if err != nil {
-		writeInternal(w, "list grants", err)
+		writeInternal(w, r, "list grants", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
@@ -116,7 +116,7 @@ func (s *Server) grant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, "get grant", err)
+		writeInternal(w, r, "get grant", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, one)
@@ -133,7 +133,7 @@ func (s *Server) terms(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := s.store.Terms(r.Context(), id)
 	if err != nil {
-		writeInternal(w, "list terms", err)
+		writeInternal(w, r, "list terms", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
@@ -146,7 +146,7 @@ func (s *Server) activity(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := s.store.Activity(r.Context(), limit)
 	if err != nil {
-		writeInternal(w, "list activity", err)
+		writeInternal(w, r, "list activity", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
@@ -155,7 +155,7 @@ func (s *Server) activity(w http.ResponseWriter, r *http.Request) {
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 	st, err := s.store.Stats(r.Context())
 	if err != nil {
-		writeInternal(w, "stats", err)
+		writeInternal(w, r, "stats", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
@@ -167,7 +167,7 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 func (s *Server) indexer(w http.ResponseWriter, r *http.Request) {
 	st, err := s.store.IndexerStatus(r.Context())
 	if err != nil {
-		writeInternal(w, "indexer status", err)
+		writeInternal(w, r, "indexer status", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
@@ -191,7 +191,7 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 		v = struct{}{}
 	}
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("write response: %v", err)
+		slog.Default().Error("write response", "error", err)
 	}
 }
 
@@ -199,7 +199,7 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
 }
 
-func writeInternal(w http.ResponseWriter, op string, err error) {
-	log.Printf("%s: %v", op, err)
+func writeInternal(w http.ResponseWriter, r *http.Request, op string, err error) {
+	slog.Default().ErrorContext(r.Context(), op, "error", err)
 	writeError(w, http.StatusInternalServerError, "internal error")
 }
