@@ -49,10 +49,10 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 			"GET /healthz",
 			"GET /api/institutions",
 			"GET /api/institutions/{address}",
-			"GET /api/grants?sponsor=&institution=&status=",
+			"GET /api/grants?sponsor=&institution=&status=&limit=&cursor=",
 			"GET /api/grants/{id}",
 			"GET /api/grants/{id}/terms",
-			"GET /api/activity?limit=",
+			"GET /api/activity?limit=&cursor=",
 			"GET /api/stats",
 			"GET /api/indexer",
 		},
@@ -74,12 +74,22 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) institutions(w http.ResponseWriter, r *http.Request) {
-	list, err := s.store.Institutions(r.Context())
+	limit, cursor, ok := s.pageParams(w, r)
+	if !ok {
+		return
+	}
+	if cursor != "" {
+		if _, _, err := store.DecodeInstitutionCursor(cursor); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid cursor")
+			return
+		}
+	}
+	items, next, err := s.store.InstitutionsPage(r.Context(), cursor, limit)
 	if err != nil {
 		writeInternal(w, "list institutions", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, list)
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "next_cursor": next})
 }
 
 func (s *Server) institution(w http.ResponseWriter, r *http.Request) {
@@ -96,13 +106,23 @@ func (s *Server) institution(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) grants(w http.ResponseWriter, r *http.Request) {
+	limit, cursor, ok := s.pageParams(w, r)
+	if !ok {
+		return
+	}
+	if cursor != "" {
+		if _, err := store.DecodeGrantCursor(cursor); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid cursor")
+			return
+		}
+	}
 	q := r.URL.Query()
-	list, err := s.store.Grants(r.Context(), q.Get("sponsor"), q.Get("institution"), q.Get("status"))
+	items, next, err := s.store.GrantsPage(r.Context(), q.Get("sponsor"), q.Get("institution"), q.Get("status"), cursor, limit)
 	if err != nil {
 		writeInternal(w, "list grants", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, list)
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "next_cursor": next})
 }
 
 func (s *Server) grant(w http.ResponseWriter, r *http.Request) {
@@ -140,16 +160,22 @@ func (s *Server) terms(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) activity(w http.ResponseWriter, r *http.Request) {
-	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
-	if err != nil {
-		limit = 50
+	limit, cursor, ok := s.pageParams(w, r)
+	if !ok {
+		return
 	}
-	list, err := s.store.Activity(r.Context(), limit)
+	if cursor != "" {
+		if _, _, err := store.DecodeActivityCursor(cursor); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid cursor")
+			return
+		}
+	}
+	items, next, err := s.store.ActivityPage(r.Context(), cursor, limit)
 	if err != nil {
 		writeInternal(w, "list activity", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, list)
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "next_cursor": next})
 }
 
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
@@ -174,6 +200,19 @@ func (s *Server) indexer(w http.ResponseWriter, r *http.Request) {
 }
 
 // ----- helpers ---------------------------------------------------------------
+
+// pageParams reads ?limit= and ?cursor=, validating the limit. An invalid
+// limit is a client error and short-circuits the handler before it touches the
+// store; the cursor itself is validated later by the store's decoder, which is
+// what lets a malformed cursor return 400 without a database round-trip.
+func (s *Server) pageParams(w http.ResponseWriter, r *http.Request) (limit int, cursor string, ok bool) {
+	limit, err := store.ParsePageLimit(r.URL.Query().Get("limit"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "limit must be an integer between 1 and 200")
+		return 0, "", false
+	}
+	return limit, r.URL.Query().Get("cursor"), true
+}
 
 func parseID(w http.ResponseWriter, raw string) (int64, bool) {
 	id, err := strconv.ParseInt(raw, 10, 64)

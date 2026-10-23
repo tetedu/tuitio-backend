@@ -31,14 +31,31 @@ them into a Postgres read model the frontend can query.
 |---|---|
 | `GET /` | service descriptor listing every endpoint |
 | `GET /healthz` | liveness + database check |
-| `GET /api/institutions` | all registered institutions |
+| `GET /api/institutions?limit=&cursor=` | registered institutions, keyset-paginated on `(registered_at, address)` |
 | `GET /api/institutions/{address}` | one institution |
-| `GET /api/grants?sponsor=&institution=&status=` | grants, filterable |
+| `GET /api/grants?sponsor=&institution=&status=&limit=&cursor=` | grants, filterable and keyset-paginated on `grant_id` |
 | `GET /api/grants/{id}` | one grant with escrowed amount |
 | `GET /api/grants/{id}/terms` | every term, defaulting to `pending` like the contract |
-| `GET /api/activity?limit=` | raw event audit feed |
+| `GET /api/activity?limit=&cursor=` | raw event audit feed, keyset-paginated on `(ledger, seen_at)` |
 | `GET /api/stats` | protocol counters |
 | `GET /api/indexer` | indexing progress, lag, skipped history, last reconciliation |
+
+### List pagination
+
+`/api/institutions`, `/api/grants` and `/api/activity` accept cursor pagination so
+the API stays fast as the index grows:
+
+- **`limit`** — page size, default `50`, capped at `200`. A non-integer value is
+  rejected with `400`.
+- **`cursor`** — an opaque token from the previous page's `next_cursor`. A
+  malformed cursor is rejected with `400`.
+- **Response** — `{ "items": [ ... ], "next_cursor": "..." }`. When `next_cursor`
+  is empty, the final page has been reached. The audit feed's legacy bare-array
+  response has been replaced by the same envelope.
+- **Stability** — ordering is deterministic (`registered_at DESC, address DESC`
+  for institutions; `grant_id DESC` for grants; `ledger DESC, seen_at DESC` for
+  activity), and the cursor encodes the last row's sort keys, so pages never
+  skip or duplicate rows as the underlying data changes.
 
 ## Quick start
 
