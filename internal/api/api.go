@@ -4,20 +4,30 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/tetedu/tuitio-backend/internal/activity"
 	"github.com/tetedu/tuitio-backend/internal/store"
 )
 
 type Server struct {
-	store *store.Store
+	store  *store.Store
+	broker *activity.Broker
 }
 
 func New(st *store.Store) *Server {
 	return &Server{store: st}
+}
+
+// SetActivityBroker attaches the live-activity broker that powers the SSE
+// stream at GET /api/activity/stream. Without it the endpoint reports 503.
+func (s *Server) SetActivityBroker(b *activity.Broker) *Server {
+	s.broker = b
+	return s
 }
 
 func (s *Server) Routes() *http.ServeMux {
@@ -32,6 +42,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/grants/{id}", s.grant)
 	mux.HandleFunc("GET /api/grants/{id}/terms", s.terms)
 	mux.HandleFunc("GET /api/activity", s.activity)
+	mux.HandleFunc("GET /api/activity/stream", s.activityStream)
 	mux.HandleFunc("GET /api/stats", s.stats)
 	mux.HandleFunc("GET /api/indexer", s.indexer)
 	return mux
@@ -53,6 +64,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 			"GET /api/grants/{id}",
 			"GET /api/grants/{id}/terms",
 			"GET /api/activity?limit=",
+			"GET /api/activity/stream",
 			"GET /api/stats",
 			"GET /api/indexer",
 		},
@@ -150,6 +162,54 @@ func (s *Server) activity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
+}
+
+// activityStream streams indexed activity as Server-Sent Events. Each event
+// carries the same shape as the rows returned by GET /api/activity, so a client
+// can fall back to polling the identical contract. The connection closes when
+// the client disconnects or the server shuts down.
+func (s *Server) activityStream(w http.ResponseWriter, r *http.Request) {
+	if s.broker == nil {
+		writeError(w, http.StatusServiceUnavailable, "live activity stream is disabled")
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+	ch, cancel := s.broker.Subscribe()
+	defer cancel()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	// Opening comment proves the stream is live to proxies that buffer the
+	// first bytes; it is not a data frame a client should parse.
+	io.WriteString(w, ": connected\n\n")
+	flusher.Flush()
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(ev)
+			if err != nil {
+				continue
+			}
+			io.WriteString(w, "data: ")
+			w.Write(data)
+			io.WriteString(w, "\n\n")
+			flusher.Flush()
+		}
+	}
 }
 
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {

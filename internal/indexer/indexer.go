@@ -2,10 +2,12 @@ package indexer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"time"
 
+	"github.com/tetedu/tuitio-backend/internal/activity"
 	"github.com/tetedu/tuitio-backend/internal/rpc"
 	"github.com/tetedu/tuitio-backend/internal/store"
 )
@@ -20,10 +22,17 @@ type Indexer struct {
 	contracts   []string
 	poll        time.Duration
 	startLedger uint32
+	broker      *activity.Broker
 }
 
 func New(client *rpc.Client, st *store.Store, contracts []string, poll time.Duration, startLedger uint32) *Indexer {
 	return &Indexer{rpc: client, store: st, contracts: contracts, poll: poll, startLedger: startLedger}
+}
+
+// SetBroker attaches the live-activity broker. When set, every activity the
+// indexer records is also published to subscribers of GET /api/activity/stream.
+func (ix *Indexer) SetBroker(b *activity.Broker) {
+	ix.broker = b
 }
 
 // Run blocks until the context is cancelled.
@@ -281,6 +290,18 @@ func (ix *Indexer) recordActivity(ctx context.Context, events []rpc.Event) {
 		if err := ix.store.RecordActivity(ctx, int64(ev.Ledger), ev.TxHash, ev.ContractID, name, decoded); err != nil {
 			log.Printf("indexer: record activity: %v", err)
 			return
+		}
+		if ix.broker != nil {
+			if raw, mErr := json.Marshal(decoded); mErr == nil {
+				ix.broker.Publish(activity.Event{
+					Ledger:   int64(ev.Ledger),
+					TxHash:   ev.TxHash,
+					Contract: ev.ContractID,
+					Event:    name,
+					Payload:  raw,
+					SeenAt:   time.Now().UTC(),
+				})
+			}
 		}
 	}
 }

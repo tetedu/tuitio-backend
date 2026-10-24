@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tetedu/tuitio-backend/internal/activity"
 	"github.com/tetedu/tuitio-backend/internal/api"
 	"github.com/tetedu/tuitio-backend/internal/config"
 	"github.com/tetedu/tuitio-backend/internal/indexer"
@@ -39,11 +40,17 @@ func main() {
 		time.Duration(cfg.PollSeconds)*time.Second,
 		cfg.StartLedger,
 	)
+
+	// Live-activity broker: the indexer publishes each recorded activity and the
+	// SSE endpoint streams it. Buffer 256 events per subscriber so a brief
+	// client stall never backs up the indexer.
+	broker := activity.NewBroker(256)
+	ix.SetBroker(broker)
 	go ix.Run(ctx)
 
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(cfg.Host, cfg.Port),
-		Handler:           api.New(st).RoutesWithCORS(cfg.AllowedOrigins),
+		Handler:           api.New(st).SetActivityBroker(broker).RoutesWithCORS(cfg.AllowedOrigins),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
