@@ -20,10 +20,21 @@ type Indexer struct {
 	contracts   []string
 	poll        time.Duration
 	startLedger uint32
+	// onGap, if set, is invoked right after a skipped-history gap is detected
+	// and recorded. It is the natural trigger for a reconciliation pass. The
+	// indexer never blocks on it: handlers should return quickly (e.g. fire a
+	// background pass) rather than do the work inline.
+	onGap func(ctx context.Context)
 }
 
 func New(client *rpc.Client, st *store.Store, contracts []string, poll time.Duration, startLedger uint32) *Indexer {
 	return &Indexer{rpc: client, store: st, contracts: contracts, poll: poll, startLedger: startLedger}
+}
+
+// SetGapHandler registers a callback invoked when the indexer has to skip
+// history it can no longer read. A nil handler (the default) disables it.
+func (ix *Indexer) SetGapHandler(f func(ctx context.Context)) {
+	ix.onGap = f
 }
 
 // Run blocks until the context is cancelled.
@@ -99,6 +110,12 @@ func (ix *Indexer) pollOnce(ctx context.Context) {
 				}
 				if err := ix.store.RecordGap(ctx, cursor, int64(re.Oldest)); err != nil {
 					log.Printf("indexer: record gap: %v", err)
+				}
+				// The gap is the exact moment a reconciliation pass is needed;
+				// surface it to a registered handler (e.g. to trigger one)
+				// without blocking the indexer loop.
+				if ix.onGap != nil {
+					ix.onGap(ctx)
 				}
 				// Only one jump per poll, so a persistently bad range cannot
 				// spin this loop.

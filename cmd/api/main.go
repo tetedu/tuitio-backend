@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/tetedu/tuitio-backend/internal/api"
+	"github.com/tetedu/tuitio-backend/internal/chain"
 	"github.com/tetedu/tuitio-backend/internal/config"
 	"github.com/tetedu/tuitio-backend/internal/indexer"
+	"github.com/tetedu/tuitio-backend/internal/reconcile"
 	"github.com/tetedu/tuitio-backend/internal/rpc"
 	"github.com/tetedu/tuitio-backend/internal/store"
 )
@@ -39,6 +41,32 @@ func main() {
 		time.Duration(cfg.PollSeconds)*time.Second,
 		cfg.StartLedger,
 	)
+
+	// Simulation needs an existing account to name as the transaction source;
+	// it neither signs nor submits, so any funded address works.
+	reconcileSource := os.Getenv("RECONCILE_SOURCE")
+	if reconcileSource == "" {
+		reconcileSource = "GCPYAUYJNA3FQDJBEKCVHAD5TQYLNIZVNQHVVB4ZLK76B4K3EQPLBLEH"
+	}
+	reader := chain.NewReader(cfg.RpcURL, reconcileSource)
+	esc := chain.NewEscrow(reader, cfg.EscrowContract)
+	reg := chain.NewRegistry(reader, cfg.RegistryContract)
+
+	// Run a reconciliation pass automatically when the indexer detects a skipped
+	// history gap, and (optionally) on a periodic safety-net cadence. Passes
+	// never overlap: concurrent triggers are coalesced.
+	var repo reconcile.Repo = st
+	super := reconcile.NewSupervisor(
+		func(ctx context.Context) (reconcile.Report, error) {
+			return reconcile.Run(ctx, esc, reg, repo)
+		},
+		func(ctx context.Context, repaired int) error {
+			return st.RecordReconcile(ctx, repaired)
+		},
+	)
+	ix.SetGapHandler(func(ctx context.Context) { super.Trigger(ctx) })
+	super.StartPeriodic(ctx, time.Duration(cfg.ReconcileIntervalSeconds)*time.Second)
+
 	go ix.Run(ctx)
 
 	srv := &http.Server{

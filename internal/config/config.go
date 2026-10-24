@@ -9,15 +9,16 @@ import (
 )
 
 type Config struct {
-	DatabaseURL      string
-	RpcURL           string
-	RegistryContract string
-	EscrowContract   string
-	StartLedger      uint32
-	PollSeconds      int
-	Port             string
-	Host             string
-	AllowedOrigins   []string
+	DatabaseURL              string
+	RpcURL                   string
+	RegistryContract         string
+	EscrowContract           string
+	StartLedger              uint32
+	PollSeconds              int
+	ReconcileIntervalSeconds int // 0 = automatic periodic pass disabled
+	Port                     string
+	Host                     string
+	AllowedOrigins           []string
 }
 
 // Load reads configuration and fails fast on anything missing or malformed.
@@ -61,6 +62,13 @@ func Load() (Config, error) {
 	}
 	c.StartLedger = uint32(start)
 	c.AllowedOrigins = allowedOrigins
+
+	recInt, err := strconv.Atoi(getenv("RECONCILE_INTERVAL", "0"))
+	if err != nil || recInt < 0 {
+		return c, fmt.Errorf("RECONCILE_INTERVAL must be a non-negative integer (seconds)")
+	}
+	c.ReconcileIntervalSeconds = recInt
+
 	return c, nil
 }
 
