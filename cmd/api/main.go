@@ -43,7 +43,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(cfg.Host, cfg.Port),
-		Handler:           api.New(st).RoutesWithCORS(cfg.AllowedOrigins),
+		Handler:           api.New(st).RoutesWithCORS(cfg.AllowedOrigins, cfg.CacheMaxAge),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
