@@ -33,6 +33,7 @@ them into a Postgres read model the frontend can query.
 | `GET /healthz` | liveness + database check |
 | `GET /api/institutions` | all registered institutions |
 | `GET /api/institutions/{address}` | one institution |
+| `GET /api/institutions/{address}/stats` | per-institution grant & term totals (grants_total, terms_released, terms_refunded, total_released, dispute_rate) |
 | `GET /api/grants?sponsor=&institution=&status=` | grants, filterable |
 | `GET /api/grants/{id}` | one grant with escrowed amount |
 | `GET /api/grants/{id}/terms` | every term, defaulting to `pending` like the contract |

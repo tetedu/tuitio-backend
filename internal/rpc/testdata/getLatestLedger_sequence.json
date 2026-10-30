@@ -1,0 +1,9 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "id": "0019633543439544320",
+    "sequence": 4571402,
+    "protocolVersion": 22
+  }
+}

@@ -28,6 +28,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /api/institutions", s.institutions)
 	mux.HandleFunc("GET /api/institutions/{address}", s.institution)
+	mux.HandleFunc("GET /api/institutions/{address}/stats", s.institutionStats)
 	mux.HandleFunc("GET /api/grants", s.grants)
 	mux.HandleFunc("GET /api/grants/{id}", s.grant)
 	mux.HandleFunc("GET /api/grants/{id}/terms", s.terms)
@@ -49,6 +50,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 			"GET /healthz",
 			"GET /api/institutions",
 			"GET /api/institutions/{address}",
+			"GET /api/institutions/{address}/stats",
 			"GET /api/grants?sponsor=&institution=&status=",
 			"GET /api/grants/{id}",
 			"GET /api/grants/{id}/terms",
@@ -93,6 +95,21 @@ func (s *Server) institution(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, one)
+}
+
+// institutionStats serves per-school grant and term totals aggregated in SQL,
+// replacing the N+1 queries the institution page would otherwise run.
+func (s *Server) institutionStats(w http.ResponseWriter, r *http.Request) {
+	st, err := s.store.InstitutionStats(r.Context(), r.PathValue("address"))
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "institution not found")
+		return
+	}
+	if err != nil {
+		writeInternal(w, "institution stats", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
 }
 
 func (s *Server) grants(w http.ResponseWriter, r *http.Request) {
