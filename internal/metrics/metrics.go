@@ -106,3 +106,15 @@ func (s *statusWriter) WriteHeader(code int) {
 	s.status = code
 	s.ResponseWriter.WriteHeader(code)
 }
+
+// Flush forwards to the underlying writer so streaming handlers keep working
+// through this middleware. Wrapping a ResponseWriter hides the optional
+// interfaces it implements: a handler that type-asserts w.(http.Flusher) sees
+// the wrapper, not the real writer, and a streaming endpoint silently stops
+// streaming or refuses to start. statusWriter does not buffer, so there is
+// nothing to reconcile before flushing.
+func (s *statusWriter) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}

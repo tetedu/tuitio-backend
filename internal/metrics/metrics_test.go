@@ -127,3 +127,48 @@ func mustServer(t *testing.T) *httptest.Server {
 	mux.Handle("GET /metrics", Handler())
 	return httptest.NewServer(mux)
 }
+
+// TestMetricsMiddlewarePreservesFlusher guards the streaming path. The
+// middleware wraps http.ResponseWriter in statusWriter, and a wrapper that
+// does not forward http.Flusher makes every streaming handler behind it fail
+// its own capability check — a failure that is invisible to a test which
+// calls the handler without the middleware.
+func TestMetricsMiddlewarePreservesFlusher(t *testing.T) {
+	var sawFlusher, flushed bool
+
+	handler := MetricsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f, ok := w.(http.Flusher)
+		sawFlusher = ok
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: hello\n\n"))
+		f.Flush()
+		flushed = true
+	}))
+
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/activity/stream")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if !sawFlusher {
+		t.Error("handler did not see an http.Flusher through MetricsMiddleware")
+	}
+	if !flushed {
+		t.Error("handler never reached its Flush call")
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
+		t.Errorf("content-type = %q, want text/event-stream", ct)
+	}
+}
