@@ -37,11 +37,14 @@ func TestRoutesAreWired(t *testing.T) {
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	dir := t.TempDir()
+	// One port per test file, because `go test ./...` runs packages in
+	// parallel: 9876 store, 9877 indexer/live, 9878-9879 indexer/recovery,
+	// 9881 reconcile, 9882 here.
 	cfg := embeddedpostgres.DefaultConfig().
 		RuntimePath(dir).
 		DataPath(dir + "/data").
 		Username("tuitio").Password("tuitio").Database("tuitio").
-		Port(9877).
+		Port(9882).
 		Logger(io.Discard)
 	pg := embeddedpostgres.NewDatabase(cfg)
 	if err := pg.Start(); err != nil {
@@ -49,7 +52,7 @@ func newTestServer(t *testing.T) *Server {
 	}
 	t.Cleanup(func() { _ = pg.Stop() })
 
-	st, err := store.Connect(context.Background(), "postgres://tuitio:tuitio@localhost:9877/tuitio?sslmode=disable")
+	st, err := store.Connect(context.Background(), "postgres://tuitio:tuitio@localhost:9882/tuitio?sslmode=disable")
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
