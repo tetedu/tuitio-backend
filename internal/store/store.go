@@ -441,6 +441,18 @@ type Stats struct {
 	TermsRefunded     int `json:"terms_refunded"`
 }
 
+// InstitutionStats aggregates one institution's grant and term activity from
+// the indexed read model in a single query, so the institution page no longer
+// needs N+1 lookups across grants and terms.
+type InstitutionStats struct {
+	Address       string  `json:"address"`
+	GrantsTotal   int     `json:"grants_total"`
+	TermsReleased int     `json:"terms_released"`
+	TermsRefunded int     `json:"terms_refunded"`
+	TotalReleased int64   `json:"total_released"`
+	DisputeRate   float64 `json:"dispute_rate"`
+}
+
 // ----- queries ---------------------------------------------------------------
 
 func (s *Store) Institutions(ctx context.Context) ([]Institution, error) {
@@ -583,4 +595,53 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 	).Scan(&st.InstitutionsTotal, &st.InstitutionsLive, &st.GrantsTotal, &st.GrantsActive,
 		&st.TermsReleased, &st.TermsDisputed, &st.TermsRefunded)
 	return st, err
+}
+
+// InstitutionStats returns per-institution totals joined from grants and
+// terms in one query. It returns pgx.ErrNoRows when the address is not a known
+// institution, so a typo'd address 404s instead of returning a row of zeros
+// that looks like a real (empty) school.
+func (s *Store) InstitutionStats(ctx context.Context, address string) (InstitutionStats, error) {
+	var exists string
+	if err := s.pool.QueryRow(ctx, `SELECT address FROM institutions WHERE address = $1`, address).Scan(&exists); err != nil {
+		return InstitutionStats{}, err
+	}
+
+	var (
+		grantsTotal   int
+		totalTerms    int
+		termsReleased int
+		termsRefunded int
+		termsDisputed int
+		totalReleased int64
+	)
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(DISTINCT g.grant_id),
+			COUNT(t.term_index),
+			COUNT(t.term_index) FILTER (WHERE t.status = 'released'),
+			COUNT(t.term_index) FILTER (WHERE t.status = 'refunded'),
+			COUNT(t.term_index) FILTER (WHERE t.status = 'disputed'),
+			COALESCE(SUM(CASE WHEN t.status = 'released' THEN g.term_amount ELSE 0 END), 0)
+		FROM grants g
+		LEFT JOIN terms t ON t.grant_id = g.grant_id
+		WHERE g.institution = $1`, address,
+	).Scan(&grantsTotal, &totalTerms, &termsReleased, &termsRefunded, &termsDisputed, &totalReleased)
+	if err != nil {
+		return InstitutionStats{}, err
+	}
+
+	var disputeRate float64
+	if totalTerms > 0 {
+		disputeRate = float64(termsDisputed) / float64(totalTerms)
+	}
+
+	return InstitutionStats{
+		Address:       address,
+		GrantsTotal:   grantsTotal,
+		TermsReleased: termsReleased,
+		TermsRefunded: termsRefunded,
+		TotalReleased: totalReleased,
+		DisputeRate:   disputeRate,
+	}, nil
 }

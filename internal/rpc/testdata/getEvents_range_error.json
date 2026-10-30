@@ -1,0 +1,9 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32600,
+    "message": "startLedger must be within the ledger range: 4451042 - 4571402",
+    "data": "Start ledger is outside the retained history window"
+  }
+}

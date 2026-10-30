@@ -33,6 +33,7 @@ them into a Postgres read model the frontend can query.
 | `GET /healthz` | liveness + database check |
 | `GET /api/institutions` | all registered institutions |
 | `GET /api/institutions/{address}` | one institution |
+| `GET /api/institutions/{address}/stats` | per-institution grant & term totals (grants_total, terms_released, terms_refunded, total_released, dispute_rate) |
 | `GET /api/grants?sponsor=&institution=&status=` | grants, filterable |
 | `GET /api/grants/{id}` | one grant with escrowed amount |
 | `GET /api/grants/{id}/terms` | every term, defaulting to `pending` like the contract |
@@ -93,7 +94,10 @@ reconciliation ran.
 
 See [.env.example](.env.example): `DATABASE_URL`, `SOROBAN_RPC_URL`,
 `REGISTRY_CONTRACT`, `ESCROW_CONTRACT`, `START_LEDGER` (0 = start at chain
-tip; set below the first tracked event to backfill), `POLL_SECONDS`, `PORT`.
+tip; set below the first tracked event to backfill), `POLL_SECONDS`, `PORT`,
+`CACHE_MAX_AGE` (seconds of `Cache-Control` on `/api/*` GET responses, which
+also carry an `ETag` so conditional requests get `304`; `/healthz` and
+`/api/indexer` are always `no-store`).
 
 ## Deployment
 
