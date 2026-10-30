@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/tetedu/tuitio-backend/internal/metrics"
 	"github.com/tetedu/tuitio-backend/internal/rpc"
 	"github.com/tetedu/tuitio-backend/internal/store"
 )
@@ -117,6 +118,7 @@ func (ix *Indexer) pollOnce(ctx context.Context) {
 			if err := ix.store.RecordProgress(ctx, next, int64(latest)); err != nil {
 				log.Printf("indexer: record progress: %v", err)
 			}
+			metrics.RecordIndexerProgress(next, int64(latest))
 			return
 		}
 
@@ -147,6 +149,7 @@ func (ix *Indexer) pollOnce(ctx context.Context) {
 		if err := ix.store.RecordProgress(ctx, maxLedger, int64(latest)); err != nil {
 			log.Printf("indexer: record progress: %v", err)
 		}
+		metrics.RecordIndexerProgress(maxLedger, int64(latest))
 
 		ix.recordActivity(ctx, events)
 

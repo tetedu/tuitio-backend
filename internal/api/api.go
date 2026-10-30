@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/tetedu/tuitio-backend/internal/metrics"
 	"github.com/tetedu/tuitio-backend/internal/store"
 )
 
@@ -20,10 +21,13 @@ func New(st *store.Store) *Server {
 	return &Server{store: st}
 }
 
-func (s *Server) Routes() *http.ServeMux {
+// routesMux builds the route table without the metrics wrapper, so tests can
+// assert wiring without executing handlers against a nil store.
+func (s *Server) routesMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	// "/{$}" matches the root path exactly, so unknown paths still 404
 	// rather than falling through to this handler.
+	mux.Handle("GET /metrics", metrics.Handler())
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /api/institutions", s.institutions)
@@ -36,6 +40,12 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/stats", s.stats)
 	mux.HandleFunc("GET /api/indexer", s.indexer)
 	return mux
+}
+
+// Routes returns the instrumented API route table. Every request is timed and
+// the Prometheus scrape endpoint at /metrics is served alongside the API.
+func (s *Server) Routes() http.Handler {
+	return metrics.MetricsMiddleware(s.routesMux())
 }
 
 // index describes the service at the root path. This API is headless, so
@@ -57,6 +67,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 			"GET /api/activity?limit=",
 			"GET /api/stats",
 			"GET /api/indexer",
+			"GET /metrics",
 		},
 		"app":        "https://tuitio-frontend.vercel.app",
 		"repository": "https://github.com/tetedu/tuitio-backend",
