@@ -15,6 +15,17 @@ jobs:
         with:
           go-version: "1.25"
           cache: true
+      # The test suites boot a real Postgres through embedded-postgres, which
+      # downloads a binary archive on first use. Caching it keeps CI off an
+      # external registry on every run: a registry hiccup there fails every
+      # database-backed test at once, which is how this suite went red on main
+      # with "no version found matching 18.3.0".
+      - name: Cache embedded Postgres binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.embedded-postgres-go
+          key: ${{ runner.os }}-embedded-postgres-17.5.0
+
       - run: go vet ./...
       - name: Check formatting
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)

@@ -37,7 +37,7 @@ func TestRoutesAreWired(t *testing.T) {
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	dir := t.TempDir()
-	cfg := embeddedpostgres.DefaultConfig().
+	cfg := embeddedpostgres.DefaultConfig().Version(embeddedpostgres.V17).
 		RuntimePath(dir).
 		DataPath(dir + "/data").
 		Username("tuitio").Password("tuitio").Database("tuitio").

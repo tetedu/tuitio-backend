@@ -10,10 +10,19 @@ import (
 
 // newTestStore boots a throwaway Postgres, giving the store layer a real
 // database to run against in tests.
+//
+// The Postgres version is pinned rather than left to DefaultConfig, which
+// tracks the newest release embedded-postgres knows about. Tracking the newest
+// release means a library upgrade silently moves every database-backed test
+// onto a just-published binary, and if that artifact cannot be resolved the
+// whole suite fails at once with "no version found matching <version>" —
+// which is how main went red. CI also caches the downloaded archive, keyed on
+// this version, so a pin here and the key in .github/workflows/ci.yml move
+// together.
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	dir := t.TempDir()
-	cfg := embeddedpostgres.DefaultConfig().
+	cfg := embeddedpostgres.DefaultConfig().Version(embeddedpostgres.V17).
 		RuntimePath(dir).
 		DataPath(dir + "/data").
 		Username("tuitio").Password("tuitio").Database("tuitio").

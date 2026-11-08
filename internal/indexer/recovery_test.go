@@ -62,7 +62,7 @@ func (f *fakeRPC) handler(w http.ResponseWriter, r *http.Request) {
 func TestIndexerRecoversFromRetentionGap(t *testing.T) {
 	dir := t.TempDir()
 	pg := embeddedpostgres.NewDatabase(
-		embeddedpostgres.DefaultConfig().
+		embeddedpostgres.DefaultConfig().Version(embeddedpostgres.V17).
 			RuntimePath(dir).DataPath(dir + "/data").
 			Username("tuitio").Password("tuitio").Database("tuitio").
 			Port(9878).Logger(io.Discard),
@@ -124,7 +124,7 @@ func TestIndexerDoesNotSpinOnRepeatedRangeErrors(t *testing.T) {
 
 	dir := t.TempDir()
 	pg := embeddedpostgres.NewDatabase(
-		embeddedpostgres.DefaultConfig().
+		embeddedpostgres.DefaultConfig().Version(embeddedpostgres.V17).
 			RuntimePath(dir).DataPath(dir + "/data").
 			Username("tuitio").Password("tuitio").Database("tuitio").
 			Port(9879).Logger(io.Discard),
