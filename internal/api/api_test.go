@@ -16,7 +16,7 @@ import (
 // rather than a 404 from an unregistered pattern.
 func TestRoutesAreWired(t *testing.T) {
 	srv := &Server{store: nil}
-	mux := srv.Routes()
+	mux := srv.routesMux()
 	paths := []string{
 		"/healthz", "/api/institutions", "/api/institutions/GTEST",
 		"/api/institutions/GTEST/stats",
@@ -138,7 +138,7 @@ func TestInstitutionStatsNotFound(t *testing.T) {
 // TestGrantIDValidation checks malformed ids are rejected before hitting the store.
 func TestGrantIDValidation(t *testing.T) {
 	srv := &Server{store: nil}
-	mux := srv.Routes()
+	mux := srv.routesMux()
 	for _, id := range []string{"abc", "-1", "1.5"} {
 		req := httptest.NewRequest(http.MethodGet, "/api/grants/"+id, nil)
 		rec := httptest.NewRecorder()
@@ -157,7 +157,7 @@ func TestGrantIDValidation(t *testing.T) {
 // instead of a bare 404, and that unknown paths still 404.
 func TestIndexDescribesService(t *testing.T) {
 	srv := &Server{store: nil}
-	mux := srv.Routes()
+	mux := srv.routesMux()
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -180,7 +180,7 @@ func TestIndexDescribesService(t *testing.T) {
 
 func TestUnknownPathStillNotFound(t *testing.T) {
 	srv := &Server{store: nil}
-	mux := srv.Routes()
+	mux := srv.routesMux()
 	req := httptest.NewRequest(http.MethodGet, "/nope", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

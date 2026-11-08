@@ -94,7 +94,10 @@ reconciliation ran.
 
 See [.env.example](.env.example): `DATABASE_URL`, `SOROBAN_RPC_URL`,
 `REGISTRY_CONTRACT`, `ESCROW_CONTRACT`, `START_LEDGER` (0 = start at chain
-tip; set below the first tracked event to backfill), `POLL_SECONDS`, `PORT`.
+tip; set below the first tracked event to backfill), `POLL_SECONDS`, `PORT`,
+`CACHE_MAX_AGE` (seconds of `Cache-Control` on `/api/*` GET responses, which
+also carry an `ETag` so conditional requests get `304`; `/healthz` and
+`/api/indexer` are always `no-store`).
 
 ## Deployment
 

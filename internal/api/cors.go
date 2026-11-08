@@ -42,7 +42,13 @@ func (m *corsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.next.ServeHTTP(w, r)
 }
 
-// Routes wraps the mux with CORS handling for the given allowed origins.
-func (s *Server) RoutesWithCORS(origins []string) http.Handler {
-	return newCORSMiddleware(origins, s.Routes())
+// Routes wraps the mux with CORS handling and short-lived ETag caching for
+// the given allowed origins. maxAge is optional; when omitted the default of
+// defaultCacheMaxAge seconds applies.
+func (s *Server) RoutesWithCORS(origins []string, maxAge ...int) http.Handler {
+	age := defaultCacheMaxAge
+	if len(maxAge) > 0 {
+		age = maxAge[0]
+	}
+	return newCORSMiddleware(origins, newCacheMiddleware(age, s.Routes()))
 }

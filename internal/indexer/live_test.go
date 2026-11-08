@@ -36,7 +36,7 @@ func TestLiveIngestion(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	cfg := embeddedpostgres.DefaultConfig().
+	cfg := embeddedpostgres.DefaultConfig().Version(embeddedpostgres.V17).
 		RuntimePath(dir).DataPath(dir + "/data").
 		Username("tuitio").Password("tuitio").Database("tuitio").
 		Port(9877).Logger(nil)

@@ -18,6 +18,7 @@ type Config struct {
 	Port             string
 	Host             string
 	AllowedOrigins   []string
+	CacheMaxAge      int
 }
 
 // Load reads configuration and fails fast on anything missing or malformed.
@@ -60,6 +61,13 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("START_LEDGER must be an unsigned 32-bit integer")
 	}
 	c.StartLedger = uint32(start)
+
+	cacheAge, err := strconv.Atoi(getenv("CACHE_MAX_AGE", "5"))
+	if err != nil || cacheAge < 0 {
+		return c, fmt.Errorf("CACHE_MAX_AGE must be a non-negative integer (seconds)")
+	}
+	c.CacheMaxAge = cacheAge
+
 	c.AllowedOrigins = allowedOrigins
 	return c, nil
 }
