@@ -78,6 +78,23 @@ func Bool(v xdr.ScVal) (bool, error) {
 	return *v.B, nil
 }
 
+// AddressVec decodes a Soroban Vec<Address> into Stellar strkey strings.
+func AddressVec(v xdr.ScVal) ([]string, error) {
+	if v.Type != xdr.ScValTypeScvVec || v.Vec == nil || *v.Vec == nil {
+		return nil, fmt.Errorf("expected vec, got %v", v.Type)
+	}
+	items := *(*v.Vec)
+	out := make([]string, 0, len(items))
+	for i, item := range items {
+		addr, err := Address(item)
+		if err != nil {
+			return nil, fmt.Errorf("vec[%d]: %w", i, err)
+		}
+		out = append(out, addr)
+	}
+	return out, nil
+}
+
 // field helpers that fail fast with the field name in the error.
 func fieldU32(v xdr.ScVal, name string) (uint32, error) {
 	f, err := Field(v, name)

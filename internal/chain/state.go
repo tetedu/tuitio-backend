@@ -95,6 +95,9 @@ func InstitutionStatusName(s uint32) string {
 // ErrNotFound reports that the contract holds no such entry.
 var ErrNotFound = errors.New("not found in contract state")
 
+// MaxRegistryPage matches the registry contract's MAX_PAGE limit for list(start, limit).
+const MaxRegistryPage uint32 = 100
+
 // Escrow reads the tuition escrow contract.
 type Escrow struct {
 	reader   *Reader
@@ -192,6 +195,23 @@ func (reg *Registry) Count(ctx context.Context) (uint32, error) {
 		return 0, err
 	}
 	return U32(v)
+}
+
+// List returns up to limit institution addresses starting at registration index start.
+// The registry contract clamps limit to MaxRegistryPage (100).
+func (reg *Registry) List(ctx context.Context, start, limit uint32) ([]string, error) {
+	if limit == 0 || limit > MaxRegistryPage {
+		limit = MaxRegistryPage
+	}
+	v, err := reg.reader.Call(ctx, reg.contract, "list", u32Arg(start), u32Arg(limit))
+	if err != nil {
+		var ce *ContractError
+		if errors.As(err, &ce) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return AddressVec(v)
 }
 
 func (reg *Registry) Institution(ctx context.Context, address string) (InstitutionState, error) {

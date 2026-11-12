@@ -2,6 +2,8 @@ package reconcile
 
 import (
 	"context"
+	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/tetedu/tuitio-backend/internal/chain"
@@ -10,10 +12,14 @@ import (
 
 // fakeChain is authoritative contract state for the test.
 type fakeChain struct {
-	next   uint64
-	grants map[uint64]chain.GrantState
-	terms  map[[2]uint64]chain.TermState
-	insts  map[string]chain.InstitutionState
+	next      uint64
+	grants    map[uint64]chain.GrantState
+	terms     map[[2]uint64]chain.TermState
+	insts     map[string]chain.InstitutionState
+	order     []string
+	noList    bool
+	listErr   error
+	listCalls [][2]uint32
 }
 
 func (f *fakeChain) NextGrantID(context.Context) (uint64, error) { return f.next, nil }
@@ -33,6 +39,35 @@ func (f *fakeChain) Term(_ context.Context, id uint64, i uint32) (chain.TermStat
 		return chain.TermState{Status: chain.TermPending}, nil
 	}
 	return t, nil
+}
+
+func (f *fakeChain) List(_ context.Context, start, limit uint32) ([]string, error) {
+	f.listCalls = append(f.listCalls, [2]uint32{start, limit})
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	if f.noList {
+		return nil, &chain.ContractError{Detail: "missing function list"}
+	}
+	addrs := f.order
+	if len(addrs) == 0 {
+		addrs = make([]string, 0, len(f.insts))
+		for addr := range f.insts {
+			addrs = append(addrs, addr)
+		}
+		sort.Strings(addrs)
+	}
+	if start >= uint32(len(addrs)) || limit == 0 {
+		return []string{}, nil
+	}
+	if limit > chain.MaxRegistryPage {
+		limit = chain.MaxRegistryPage
+	}
+	end := start + limit
+	if end > uint32(len(addrs)) {
+		end = uint32(len(addrs))
+	}
+	return addrs[start:end], nil
 }
 
 func (f *fakeChain) Institution(_ context.Context, addr string) (chain.InstitutionState, error) {
@@ -273,5 +308,120 @@ func TestMissingContractEntryIsReported(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("missing entry not reported: %v", rep.Drift)
+	}
+}
+
+// An institution registered in the contract that is absent from both the read
+// model and every grant must still be discovered via Registry.List and inserted.
+func TestDiscoversUnreferencedInstitutionViaList(t *testing.T) {
+	ctx := context.Background()
+	cf := chainFixture()
+	const unreferenced = "GUNREFERENCEDSCHOOL"
+	cf.insts[unreferenced] = chain.InstitutionState{
+		Admin:        unreferenced,
+		Payout:       unreferenced,
+		Name:         "Makerere Institute",
+		Country:      "UG",
+		Status:       chain.InstitutionPending,
+		RegisteredAt: 1200,
+	}
+
+	repo := newMemRepo()
+	rep, err := Run(ctx, cf, cf, repo)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if rep.InstitutionsChecked != 2 {
+		t.Errorf("institutions checked = %d, want 2", rep.InstitutionsChecked)
+	}
+	if rep.InstitutionsRepaired != 2 {
+		t.Errorf("institutions repaired = %d, want 2", rep.InstitutionsRepaired)
+	}
+	got, ok := repo.insts[unreferenced]
+	if !ok {
+		t.Fatalf("unreferenced institution %s was not inserted into read model", unreferenced)
+	}
+	if got.Name != "Makerere Institute" || got.Status != "pending" {
+		t.Errorf("unexpected institution record: %+v", got)
+	}
+}
+
+// Paging through the registry must respect MaxRegistryPage and stop as soon as
+// a short page is returned.
+func TestListPaginationStopsOnShortPage(t *testing.T) {
+	ctx := context.Background()
+	cf := &fakeChain{
+		next:   0,
+		grants: map[uint64]chain.GrantState{},
+		terms:  map[[2]uint64]chain.TermState{},
+		insts:  map[string]chain.InstitutionState{},
+	}
+
+	totalInsts := int(chain.MaxRegistryPage)*2 + 15
+	for i := 0; i < totalInsts; i++ {
+		addr := fmt.Sprintf("GSCHOOL_%03d", i)
+		cf.order = append(cf.order, addr)
+		cf.insts[addr] = chain.InstitutionState{
+			Admin:        addr,
+			Payout:       addr,
+			Name:         fmt.Sprintf("School %d", i),
+			Country:      "RW",
+			Status:       chain.InstitutionVerified,
+			RegisteredAt: uint64(1000 + i),
+		}
+	}
+
+	repo := newMemRepo()
+	rep, err := Run(ctx, cf, cf, repo)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if rep.InstitutionsChecked != totalInsts {
+		t.Errorf("checked = %d, want %d", rep.InstitutionsChecked, totalInsts)
+	}
+	if len(cf.listCalls) != 3 {
+		t.Fatalf("listCalls = %v, want 3 pages", cf.listCalls)
+	}
+	wantCalls := [][2]uint32{
+		{0, chain.MaxRegistryPage},
+		{chain.MaxRegistryPage, chain.MaxRegistryPage},
+		{chain.MaxRegistryPage * 2, chain.MaxRegistryPage},
+	}
+	for i, want := range wantCalls {
+		if cf.listCalls[i] != want {
+			t.Errorf("listCalls[%d] = %v, want %v", i, cf.listCalls[i], want)
+		}
+	}
+}
+
+// Registries deployed before list() existed trap on list(); the reconciler must
+// fall back to the inferred institution address set from grants and read model.
+func TestFallbackToInferredAddressesWhenListUnavailable(t *testing.T) {
+	ctx := context.Background()
+	cf := chainFixture()
+	cf.noList = true
+
+	repo := newMemRepo()
+	rep, err := Run(ctx, cf, cf, repo)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if rep.InstitutionsChecked != 1 || rep.InstitutionsRepaired != 1 {
+		t.Errorf("fallback institution counts wrong: %+v", rep)
+	}
+	if _, ok := repo.insts[school]; !ok {
+		t.Errorf("grant-referenced institution %s was not repaired via fallback", school)
+	}
+}
+
+// A transient RPC failure on list() must abort the pass rather than silently
+// falling back to a potentially incomplete inferred institution set.
+func TestPropagatesTransientListRPCError(t *testing.T) {
+	ctx := context.Background()
+	cf := chainFixture()
+	cf.listErr = fmt.Errorf("simulate list: connection reset by peer")
+
+	if _, err := Run(ctx, cf, cf, newMemRepo()); err == nil {
+		t.Fatal("expected transient RPC error on list() to abort Run")
 	}
 }

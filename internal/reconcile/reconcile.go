@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/tetedu/tuitio-backend/internal/chain"
 	"github.com/tetedu/tuitio-backend/internal/store"
@@ -26,6 +27,7 @@ type EscrowSource interface {
 
 // RegistrySource reads registry state from the chain.
 type RegistrySource interface {
+	List(ctx context.Context, start, limit uint32) ([]string, error)
 	Institution(ctx context.Context, address string) (chain.InstitutionState, error)
 }
 
@@ -66,8 +68,8 @@ func (r Report) String() string {
 
 // Run walks every grant the escrow has issued, compares it and its terms with
 // the read model, and overwrites any row that disagrees. Institutions are
-// reconciled for every address the read model or a grant references, since the
-// registry cannot be enumerated on chain yet.
+// enumerated directly from the registry contract via list(start, limit),
+// falling back to the read model and grant references if list() is unavailable.
 func Run(ctx context.Context, esc EscrowSource, reg RegistrySource, repo Repo) (Report, error) {
 	var rep Report
 
@@ -161,14 +163,40 @@ func Run(ctx context.Context, esc EscrowSource, reg RegistrySource, repo Repo) (
 		}
 	}
 
-	// Everything the read model already knows about, plus every institution a
-	// grant points at.
-	known, err := repo.Institutions(ctx)
-	if err != nil {
-		return rep, fmt.Errorf("read institutions: %w", err)
-	}
-	for _, i := range known {
-		institutions[i.Address] = struct{}{}
+	// Enumerate the registry via list(start, limit) in pages of MaxRegistryPage,
+	// falling back to the inferred address set (read model + grant references)
+	// only if the deployed registry contract predates list().
+	firstPage, err := reg.List(ctx, 0, chain.MaxRegistryPage)
+	switch {
+	case err == nil:
+		log.Printf("reconcile: enumerating institutions via registry list() (max_page=%d)", chain.MaxRegistryPage)
+		institutions = make(map[string]struct{}, len(firstPage))
+		page := firstPage
+		start := uint32(0)
+		for {
+			for _, addr := range page {
+				institutions[addr] = struct{}{}
+			}
+			if uint32(len(page)) < chain.MaxRegistryPage {
+				break
+			}
+			start += uint32(len(page))
+			page, err = reg.List(ctx, start, chain.MaxRegistryPage)
+			if err != nil {
+				return rep, fmt.Errorf("list institutions at %d: %w", start, err)
+			}
+		}
+	case isListUnsupported(err):
+		log.Printf("reconcile: registry list() unavailable (%v); using inferred institution addresses", err)
+		known, err := repo.Institutions(ctx)
+		if err != nil {
+			return rep, fmt.Errorf("read institutions: %w", err)
+		}
+		for _, i := range known {
+			institutions[i.Address] = struct{}{}
+		}
+	default:
+		return rep, fmt.Errorf("list institutions: %w", err)
 	}
 
 	for addr := range institutions {
@@ -213,6 +241,14 @@ func statusOf(t store.Term, present bool) string {
 		return "absent"
 	}
 	return t.Status
+}
+
+func isListUnsupported(err error) bool {
+	if errors.Is(err, chain.ErrNotFound) {
+		return true
+	}
+	var ce *chain.ContractError
+	return errors.As(err, &ce)
 }
 
 // LockedAmount is derived, so it is excluded from the comparison.
